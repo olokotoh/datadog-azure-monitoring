@@ -1,0 +1,26 @@
+# Local .terraform directories
+**/.terraform/*
+
+# State files — never commit
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# Variable files with real values (the .example is committed)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Backend config with environment-specific values
+*.backend.hcl
+
+# Plan output
+*.tfplan
+
+# Crash logs
+crash.log
+crash.*.log
+
+# CLI config
+.terraformrc
+terraform.rc
