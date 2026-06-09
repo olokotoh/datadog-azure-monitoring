@@ -23,8 +23,9 @@ so one team's `apply` never touches another's.
     ├── .tflint.hcl
     ├── teams/
     │   ├── README.md
-    │   ├── team1/team.tfvars                # team1 owns this
-    │   └── team2/team.tfvars                # team2 owns this (add team3/ later)
+    │   ├── team1/team.tfvars                # payments + search
+    │   ├── team2/team.tfvars                # payments + orders
+    │   └── team3/team.tfvars                # payments + search + inventory
     ├── integration/                         # Datadog↔Azure integration (own root + state)
     ├── modules/
     │   ├── datadog-azure-integration/       # integration + least-privilege Azure roles
@@ -105,27 +106,27 @@ identity (`team_name`, `display_name`, `members`) and a `services` map. **Every
 service gets its own Synthetics HTTP test + response-time monitor**, all tagged
 `team:<name>` and `service:<slug>`. State is isolated per team.
 
-### How to add a new team (e.g. team3)
+### How to add a new team (e.g. team4)
 
-`team1` and `team2` ship as the base. Adding `team3` later is purely additive:
+`team1`, `team2`, and `team3` ship as the base. Adding `team4` later is purely additive:
 
-1. Create `terraform/teams/team3/team.tfvars`:
+1. Create `terraform/teams/team4/team.tfvars`:
 
    ```hcl
-   team_name    = "team3"
-   display_name = "Team 3"
-   members      = ["@team3@example.com", "@slack-team3"]
+   team_name    = "team4"
+   display_name = "Team 4"
+   members      = ["@team4@example.com", "@slack-team4"]
    services = {
      some-api = {
-       endpoint = "https://api.example.com/team3/health"
+       endpoint = "https://api.example.com/team4/health"
      }
      # add as many services as you like, each with its own assertions/thresholds
    }
    ```
 
-2. Add a line to `.github/CODEOWNERS` for `/terraform/teams/team3/`.
+2. Add a line to `.github/CODEOWNERS` for `/terraform/teams/team4/`.
 3. That's it — CI auto-discovers the folder and adds it to the plan/apply matrix
-   with its own state key (`teams/team3.tfstate`). No module or resource code changes.
+   with its own state key (`teams/team4.tfstate`). No module or resource code changes.
 
 ## CI/CD
 
