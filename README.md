@@ -23,8 +23,8 @@ so one team's `apply` never touches another's.
     ├── .tflint.hcl
     ├── teams/
     │   ├── README.md
-    │   ├── payments/team.tfvars             # Payments team owns this
-    │   └── search/team.tfvars               # Search team owns this
+    │   ├── team1/team.tfvars                # team1 owns this
+    │   └── team2/team.tfvars                # team2 owns this (add team3/ later)
     ├── integration/                         # Datadog↔Azure integration (own root + state)
     ├── modules/
     │   ├── datadog-azure-integration/       # integration + least-privilege Azure roles
@@ -84,9 +84,9 @@ terraform init -reconfigure \
   -backend-config="resource_group_name=$TFSTATE_RG" \
   -backend-config="storage_account_name=$TFSTATE_SA" \
   -backend-config="container_name=$TFSTATE_CONTAINER" \
-  -backend-config="key=teams/payments.tfstate"
-terraform plan  -var-file="teams/payments/team.tfvars"
-terraform apply -var-file="teams/payments/team.tfvars"
+  -backend-config="key=teams/team1.tfstate"
+terraform plan  -var-file="teams/team1/team.tfvars"
+terraform apply -var-file="teams/team1/team.tfvars"
 ```
 
 ### Credential-free validate
@@ -105,25 +105,27 @@ identity (`team_name`, `display_name`, `members`) and a `services` map. **Every
 service gets its own Synthetics HTTP test + response-time monitor**, all tagged
 `team:<name>` and `service:<slug>`. State is isolated per team.
 
-### How to add a new team
+### How to add a new team (e.g. team3)
 
-1. Create `terraform/teams/<team>/team.tfvars`:
+`team1` and `team2` ship as the base. Adding `team3` later is purely additive:
+
+1. Create `terraform/teams/team3/team.tfvars`:
 
    ```hcl
-   team_name    = "notifications"
-   display_name = "Notifications"
-   members      = ["@notifications@example.com", "@slack-notifs"]
+   team_name    = "team3"
+   display_name = "Team 3"
+   members      = ["@team3@example.com", "@slack-team3"]
    services = {
-     send-api = {
-       endpoint = "https://api.example.com/notifications/health"
+     some-api = {
+       endpoint = "https://api.example.com/team3/health"
      }
      # add as many services as you like, each with its own assertions/thresholds
    }
    ```
 
-2. Add a line to `.github/CODEOWNERS` for `/terraform/teams/<team>/`.
-3. That's it — CI auto-discovers the folder and adds it to the plan/apply matrix.
-   No module or resource code changes.
+2. Add a line to `.github/CODEOWNERS` for `/terraform/teams/team3/`.
+3. That's it — CI auto-discovers the folder and adds it to the plan/apply matrix
+   with its own state key (`teams/team3.tfstate`). No module or resource code changes.
 
 ## CI/CD
 
