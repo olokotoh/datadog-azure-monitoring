@@ -7,6 +7,7 @@
 /.github/                  @platform-sre
 
 # Per-team config — owned by the respective team.
-# Add a line here when you add a new team folder (e.g. team3).
+# Add a line here when you add a new team folder (e.g. team4).
 /terraform/teams/team1/ @team1
 /terraform/teams/team2/ @team2
+/terraform/teams/team3/ @team3

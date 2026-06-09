@@ -8,11 +8,12 @@ display_name = "Team 1"
 members      = ["@team1@example.com", "@slack-team1"]
 default_tags = ["tier:critical"]
 
-# List as many services as you want — each gets its own Synthetics test + monitor.
+# team1 monitors: payments + search.
+# Each service below becomes its own Synthetics test + response-time monitor.
 services = {
-  checkout-api = {
-    display_name                     = "Checkout"
-    endpoint                         = "https://api.example.com/checkout/health"
+  payments-api = {
+    display_name                     = "Payments"
+    endpoint                         = "https://api.example.com/payments/health"
     expected_status_code             = 200
     max_response_time_ms             = 800
     body_contains                    = "ok"
@@ -21,9 +22,9 @@ services = {
     renotify_interval_minutes        = 30
   }
 
-  refunds-api = {
-    display_name  = "Refunds"
-    endpoint      = "https://api.example.com/refunds/health"
-    body_contains = "healthy"
+  search-api = {
+    display_name         = "Search"
+    endpoint             = "https://api.example.com/search/health"
+    max_response_time_ms = 600
   }
 }
