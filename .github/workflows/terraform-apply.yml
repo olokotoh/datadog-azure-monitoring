@@ -23,13 +23,61 @@ env:
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_USE_OIDC: "true"
+  TF_VERSION: "1.15.1"
 
 jobs:
-  apply:
-    name: apply
+  discover:
+    name: discover teams
     runs-on: ubuntu-latest
-    # Protected environment gates the apply (manual approval / branch rules).
+    outputs:
+      teams: ${{ steps.list.outputs.teams }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - id: list
+        run: |
+          teams=$(cd terraform/teams && ls -d */ | sed 's#/##' | jq -R . | jq -cs .)
+          echo "teams=$teams" >> "$GITHUB_OUTPUT"
+
+  apply-integration:
+    name: apply (integration)
+    runs-on: ubuntu-latest
     environment: production
+    defaults:
+      run:
+        working-directory: terraform/integration
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: azure/login@v2.2.0
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.TFSTATE_SA }}" \
+            -backend-config="container_name=${{ secrets.TFSTATE_CONTAINER }}" \
+            -backend-config="key=integration.tfstate"
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve -input=false
+
+  apply-teams:
+    name: apply (${{ matrix.team }})
+    runs-on: ubuntu-latest
+    needs: [discover, apply-integration]
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        team: ${{ fromJson(needs.discover.outputs.teams) }}
     defaults:
       run:
         working-directory: terraform
@@ -44,15 +92,15 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3.1.2
         with:
-          terraform_version: "1.15.1"
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform init
+      - name: Terraform init (team state)
         run: |
-          terraform init \
+          terraform init -reconfigure \
             -backend-config="resource_group_name=${{ secrets.TFSTATE_RG }}" \
             -backend-config="storage_account_name=${{ secrets.TFSTATE_SA }}" \
             -backend-config="container_name=${{ secrets.TFSTATE_CONTAINER }}" \
-            -backend-config="key=datadog-azure-monitoring.tfstate"
+            -backend-config="key=teams/${{ matrix.team }}.tfstate"
 
       - name: Terraform apply
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file="teams/${{ matrix.team }}/team.tfvars"

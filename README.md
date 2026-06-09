@@ -3,25 +3,42 @@
 Reusable Terraform that provisions Datadog monitoring entirely as code:
 
 - the **Datadog ↔ Azure** integration (service-principal based), and
-- a **per-team API Synthetics test + alert**,
+- **per-team API Synthetics tests + alerts**,
 
-with **`team`** as the primary grouping dimension. Adding a team is a single entry
-in the `teams` map — no code changes.
+with **`team`** as the primary grouping dimension. Each team owns a folder and lists
+**any number of services** it wants to monitor — and gets its **own Terraform state**,
+so one team's `apply` never touches another's.
 
 ## Layout
 
 ```
 .
 ├── README.md  LICENSE  .gitignore
-├── .github/workflows/                   # PR (plan) + main (apply) pipelines
+├── .github/
+│   ├── CODEOWNERS                          # each team owns its folder
+│   └── workflows/                          # PR (plan) + main (apply), matrixed per team
 └── terraform/
     ├── versions.tf backend.tf providers.tf variables.tf main.tf outputs.tf
-    ├── terraform.tfvars.example .tflint.hcl
+    │                                        # ^ the PER-TEAM root (one team per state)
+    ├── .tflint.hcl
+    ├── teams/
+    │   ├── README.md
+    │   ├── payments/team.tfvars             # Payments team owns this
+    │   └── search/team.tfvars               # Search team owns this
+    ├── integration/                         # Datadog↔Azure integration (own root + state)
     ├── modules/
-    │   ├── datadog-azure-integration/   # integration + least-privilege Azure roles
-    │   └── datadog-monitoring/          # per-team Synthetics test + monitor
-    └── bootstrap/                       # one-time remote-state backend setup
+    │   ├── datadog-azure-integration/       # integration + least-privilege Azure roles
+    │   └── datadog-monitoring/              # loops over a team's services
+    └── bootstrap/                           # one-time remote-state backend setup
 ```
+
+### Roots & state
+
+| Root | State key | Scope |
+|---|---|---|
+| `terraform/` (per team) | `teams/<team>.tfstate` | one team's services |
+| `terraform/integration/` | `integration.tfstate` | the Azure integration (once) |
+| `terraform/bootstrap/` | local | creates the backend (run once) |
 
 ## Prerequisites
 
@@ -35,11 +52,12 @@ in the `teams` map — no code changes.
 |---|---|
 | `DD_API_KEY` / `DD_APP_KEY` | Datadog API + Application keys |
 | `ARM_CLIENT_ID` / `ARM_TENANT_ID` / `ARM_SUBSCRIPTION_ID` | Azure auth (OIDC preferred) |
-| `ARM_CLIENT_SECRET` | Datadog SP secret (passed to the integration) |
+| `ARM_CLIENT_SECRET` | Datadog SP secret (integration root only) |
 | `TFSTATE_RG` / `TFSTATE_SA` / `TFSTATE_CONTAINER` | Remote backend location |
 
 Nothing is hardcoded; all of the above are variables/secrets. Placeholder defaults
-let `init`/`validate` run with **no real secrets**.
+let `init`/`validate` run with **no real secrets**. Team `team.tfvars` files never
+contain secrets.
 
 ## Quick start
 
@@ -49,69 +67,83 @@ cd terraform
 # 1. One-time: create the remote state backend (see bootstrap/README.md)
 cd bootstrap && terraform init && terraform apply && cd ..
 
-# 2. Init the root against the remote backend
+# 2. One-time: the Datadog<->Azure integration (its own state)
+cd integration
 terraform init \
   -backend-config="resource_group_name=$TFSTATE_RG" \
   -backend-config="storage_account_name=$TFSTATE_SA" \
   -backend-config="container_name=$TFSTATE_CONTAINER" \
-  -backend-config="key=datadog-azure-monitoring.tfstate"
+  -backend-config="key=integration.tfstate"
+terraform apply
+cd ..
 
-# 3. Validate / plan / apply
+# 3. A team (repeat per team, each with its own state key)
 export TF_VAR_datadog_api_key=... TF_VAR_datadog_app_key=...
 export ARM_CLIENT_ID=... ARM_TENANT_ID=... ARM_SUBSCRIPTION_ID=... ARM_USE_OIDC=true
-terraform validate
-terraform plan
-terraform apply
+terraform init -reconfigure \
+  -backend-config="resource_group_name=$TFSTATE_RG" \
+  -backend-config="storage_account_name=$TFSTATE_SA" \
+  -backend-config="container_name=$TFSTATE_CONTAINER" \
+  -backend-config="key=teams/payments.tfstate"
+terraform plan  -var-file="teams/payments/team.tfvars"
+terraform apply -var-file="teams/payments/team.tfvars"
 ```
 
-### Credential-free validate/plan
+### Credential-free validate
 
 ```bash
-terraform init -backend=false
-terraform validate          # passes with placeholder defaults
-# For plan without Azure auth, set manage_azure_permissions = false.
+cd terraform
+terraform init -backend=false && terraform validate                 # per-team root
+cd integration && terraform init -backend=false && terraform validate
+# For an integration plan without Azure auth, set manage_azure_permissions = false.
 ```
 
 ## Multi-team usage
 
-Teams are driven by the `teams` map (`for_each`). Each team gets its own Synthetics
-test and monitor, all tagged `team:<name>`.
+A team = a folder under `terraform/teams/`. Each team's `team.tfvars` declares its
+identity (`team_name`, `display_name`, `members`) and a `services` map. **Every
+service gets its own Synthetics HTTP test + response-time monitor**, all tagged
+`team:<name>` and `service:<slug>`. State is isolated per team.
 
 ### How to add a new team
 
-Append one block to `teams` (in `terraform.tfvars` or your `TF_VAR_teams`):
+1. Create `terraform/teams/<team>/team.tfvars`:
 
-```hcl
-teams = {
-  # ... existing teams ...
-  team3 = {
-    display_name = "Notifications"
-    members      = ["@notifications@example.com", "@slack-notifs"]
-    api = {
-      endpoint = "https://api.example.com/notifications/health"
-    }
-  }
-}
-```
+   ```hcl
+   team_name    = "notifications"
+   display_name = "Notifications"
+   members      = ["@notifications@example.com", "@slack-notifs"]
+   services = {
+     send-api = {
+       endpoint = "https://api.example.com/notifications/health"
+     }
+     # add as many services as you like, each with its own assertions/thresholds
+   }
+   ```
 
-Then `terraform plan && terraform apply`. No module or resource code changes.
+2. Add a line to `.github/CODEOWNERS` for `/terraform/teams/<team>/`.
+3. That's it — CI auto-discovers the folder and adds it to the plan/apply matrix.
+   No module or resource code changes.
 
 ## CI/CD
 
-- **Pull request** (`terraform-pr.yml`): `fmt -check` → `init -backend=false` →
-  `validate` → `tflint` → `checkov` → remote `init` → `plan` (posted as a PR comment).
-- **Merge to `main`** (`terraform-apply.yml`): `init` → `apply` against the locked
-  remote backend, behind a protected `production` environment.
+- **Pull request** (`terraform-pr.yml`): `fmt -check` → `validate` (both roots) →
+  `tflint` → `checkov`, then a **per-team `plan` matrix** + an integration `plan`,
+  each posted as its own PR comment.
+- **Merge to `main`** (`terraform-apply.yml`): applies the **integration** first,
+  then a **per-team `apply` matrix**, each against its own state key, behind a
+  protected `production` environment.
 
-Azure auth uses **OIDC** (`ARM_USE_OIDC=true`, no long-lived secret for login).
-Action versions are pinned; convert the version tags to commit SHAs (e.g. via
-Dependabot) for the strictest supply-chain posture.
+Teams are discovered automatically from `terraform/teams/*/`. Azure auth uses
+**OIDC** (`ARM_USE_OIDC=true`). Action versions are pinned; convert version tags to
+commit SHAs (e.g. via Dependabot) for the strictest supply-chain posture.
 
 ## State & locking
 
-Remote state lives in Azure Storage; locking is automatic via **blob lease**.
-The backend uses Azure AD auth (`use_azuread_auth = true`) — grant the runner the
-`Storage Blob Data Contributor` role on the storage account.
+Remote state lives in Azure Storage; locking is automatic via **blob lease**, and
+each team/root uses a distinct state key. The backend uses Azure AD auth
+(`use_azuread_auth = true`) — grant the runner `Storage Blob Data Contributor` on
+the storage account.
 
 ## Quality gates
 
