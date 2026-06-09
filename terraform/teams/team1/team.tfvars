@@ -1,11 +1,11 @@
-# Owned by the Payments team (see .github/CODEOWNERS).
+# Owned by team1 (see .github/CODEOWNERS).
 # Secrets (Datadog keys) are NOT here — they come from env / CI secrets.
-# Apply: from terraform/, init with key=teams/payments.tfstate, then
-#        terraform apply -var-file="teams/payments/team.tfvars"
+# Apply: from terraform/, init with key=teams/team1.tfstate, then
+#        terraform apply -var-file="teams/team1/team.tfvars"
 
-team_name    = "payments"
-display_name = "Payments"
-members      = ["@payments@example.com", "@slack-payments"]
+team_name    = "team1"
+display_name = "Team 1"
+members      = ["@team1@example.com", "@slack-team1"]
 default_tags = ["tier:critical"]
 
 # List as many services as you want — each gets its own Synthetics test + monitor.

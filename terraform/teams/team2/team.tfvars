@@ -1,9 +1,9 @@
-# Owned by the Search team (see .github/CODEOWNERS).
-# This team monitors a different set of services than Payments.
+# Owned by team2 (see .github/CODEOWNERS).
+# This team monitors a different set of services than team1.
 
-team_name    = "search"
-display_name = "Search"
-members      = ["@search@example.com"]
+team_name    = "team2"
+display_name = "Team 2"
+members      = ["@team2@example.com"]
 
 services = {
   search-api = {
