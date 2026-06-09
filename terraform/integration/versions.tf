@@ -6,5 +6,9 @@ terraform {
       source  = "DataDog/datadog"
       version = "~> 3.39"
     }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.20"
+    }
   }
 }

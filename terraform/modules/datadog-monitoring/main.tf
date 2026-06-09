@@ -1,46 +1,48 @@
 locals {
-  tags         = concat(["team:${var.team_name}", "managed-by:terraform"], var.extra_tags)
+  base_tags    = concat(["team:${var.team_name}", "managed-by:terraform"], var.extra_tags)
   notification = join(" ", var.members)
 }
 
-# Synthetics API (HTTP) test against the team's API endpoint, with assertions.
+# One Synthetics API (HTTP) test per service this team monitors.
 resource "datadog_synthetics_test" "api" {
-  name      = "[${var.team_name}] ${var.display_name} API health"
+  for_each = var.services
+
+  name      = "[${var.team_name}] ${coalesce(each.value.display_name, each.key)} API health"
   type      = "api"
   subtype   = "http"
   status    = "live"
-  locations = var.api.locations
-  tags      = local.tags
-  message   = "API health check failed for ${var.display_name}.\nNotifying: ${local.notification}"
+  locations = each.value.locations
+  tags      = concat(local.base_tags, ["service:${each.key}"])
+  message   = "API health check failed for ${coalesce(each.value.display_name, each.key)} (team ${var.display_name}).\nNotifying: ${local.notification}"
 
   request_definition {
     method = "GET"
-    url    = var.api.endpoint
+    url    = each.value.endpoint
   }
 
   assertion {
     type     = "statusCode"
     operator = "is"
-    target   = var.api.expected_status_code
+    target   = each.value.expected_status_code
   }
 
   assertion {
     type     = "responseTime"
     operator = "lessThan"
-    target   = var.api.max_response_time_ms
+    target   = each.value.max_response_time_ms
   }
 
   dynamic "assertion" {
-    for_each = var.api.body_contains != "" ? [1] : []
+    for_each = each.value.body_contains != "" ? [1] : []
     content {
       type     = "body"
       operator = "contains"
-      target   = var.api.body_contains
+      target   = each.value.body_contains
     }
   }
 
   options_list {
-    tick_every = var.api.tick_every_seconds
+    tick_every = each.value.tick_every_seconds
 
     retry {
       count    = 2
@@ -48,22 +50,24 @@ resource "datadog_synthetics_test" "api" {
     }
 
     monitor_options {
-      renotify_interval = var.renotify_interval_minutes
+      renotify_interval = each.value.renotify_interval_minutes
     }
   }
 }
 
-# Complementary monitor tied to the test's results, notifying the team.
+# Complementary response-time monitor per service, tied to its test and notifying the team.
 resource "datadog_monitor" "response_time" {
-  name    = "[${var.team_name}] ${var.display_name} API response time"
+  for_each = var.services
+
+  name    = "[${var.team_name}] ${coalesce(each.value.display_name, each.key)} API response time"
   type    = "metric alert"
-  message = "Response time high for ${var.display_name}. ${local.notification}"
-  query   = "avg(last_5m):avg:synthetics.http.response.time{check_id:${datadog_synthetics_test.api.monitor_id}} > ${var.response_time_alert_threshold_ms}"
+  message = "Response time high for ${coalesce(each.value.display_name, each.key)} (team ${var.display_name}). ${local.notification}"
+  query   = "avg(last_5m):avg:synthetics.http.response.time{check_id:${datadog_synthetics_test.api[each.key].monitor_id}} > ${each.value.response_time_alert_threshold_ms}"
 
   monitor_thresholds {
-    critical = var.response_time_alert_threshold_ms
+    critical = each.value.response_time_alert_threshold_ms
   }
 
-  renotify_interval = var.renotify_interval_minutes
-  tags              = local.tags
+  renotify_interval = each.value.renotify_interval_minutes
+  tags              = concat(local.base_tags, ["service:${each.key}"])
 }

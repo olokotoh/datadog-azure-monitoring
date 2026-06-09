@@ -28,74 +28,61 @@ variable "datadog_api_url" {
 }
 
 # ---------------------------------------------------------------------------
-# Azure service principal for the Datadog integration (never hardcoded).
+# Team identity + services. Supplied per team via teams/<team>/team.tfvars.
+# Each team is applied as its own root with its own state key.
 # ---------------------------------------------------------------------------
-variable "azure_subscription_id" {
-  description = "Azure subscription ID Datadog will pull metrics from."
+variable "team_name" {
+  description = "Team slug; primary grouping tag (team:<name>) and state-key component."
   type        = string
-  default     = "00000000-0000-0000-0000-000000000000"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,30}$", var.team_name))
+    error_message = "team_name must be 2-31 chars, lowercase alphanumeric or hyphen, starting alphanumeric."
+  }
 }
 
-variable "azure_tenant_id" {
-  description = "Azure AD tenant (directory) ID."
+variable "display_name" {
+  description = "Human-friendly team name used in test/monitor titles."
   type        = string
-  default     = "00000000-0000-0000-0000-000000000000"
 }
 
-variable "azure_client_id" {
-  description = "Application (client) ID of the Datadog integration service principal."
-  type        = string
-  default     = "00000000-0000-0000-0000-000000000000"
+variable "members" {
+  description = "Datadog notification handles for this team (e.g. '@a@x.com', '@slack-team')."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.members) > 0
+    error_message = "At least one notification handle is required."
+  }
 }
 
-variable "azure_client_secret" {
-  description = "Client secret of the Datadog integration service principal."
-  type        = string
-  sensitive   = true
-  default     = "REPLACE_WITH_AZURE_CLIENT_SECRET"
+variable "default_tags" {
+  description = "Extra tags applied to every resource for this team."
+  type        = list(string)
+  default     = []
 }
 
-variable "azure_sp_object_id" {
-  description = "Object ID of the Datadog service principal (used for Azure role assignments)."
-  type        = string
-  default     = "00000000-0000-0000-0000-000000000000"
-}
-
-variable "manage_azure_permissions" {
-  description = "Whether to create the least-privilege Azure role assignments for the Datadog SP. Set false for a credential-free plan/demo."
-  type        = bool
-  default     = true
-}
-
-# ---------------------------------------------------------------------------
-# Teams — the primary grouping dimension. Add a team = one map entry.
-# ---------------------------------------------------------------------------
-variable "teams" {
-  description = "Map of teams to monitor. Key is the team slug; each value defines members, tags, and one API service to monitor."
+variable "services" {
+  description = "Map of API services this team monitors. The map key is the service slug."
   type = map(object({
-    display_name = string
-    members      = list(string)
-    tags         = optional(list(string), [])
-    api = object({
-      endpoint             = string
-      expected_status_code = optional(number, 200)
-      max_response_time_ms = optional(number, 1000)
-      body_contains        = optional(string, "")
-      locations            = optional(list(string), ["aws:us-east-1"])
-      tick_every_seconds   = optional(number, 300)
-    })
+    endpoint                         = string
+    display_name                     = optional(string)
+    expected_status_code             = optional(number, 200)
+    max_response_time_ms             = optional(number, 1000)
+    body_contains                    = optional(string, "")
+    locations                        = optional(list(string), ["aws:us-east-1"])
+    tick_every_seconds               = optional(number, 300)
     response_time_alert_threshold_ms = optional(number, 1500)
     renotify_interval_minutes        = optional(number, 0)
   }))
-  default = {}
 
   validation {
-    condition     = alltrue([for t in var.teams : length(t.members) > 0])
-    error_message = "Each team must define at least one notification handle in members."
+    condition     = length(var.services) > 0
+    error_message = "A team must monitor at least one service."
   }
 
   validation {
-    condition     = alltrue([for t in var.teams : startswith(t.api.endpoint, "https://")])
-    error_message = "Each team's api.endpoint must be an https:// URL."
+    condition     = alltrue([for s in var.services : startswith(s.endpoint, "https://")])
+    error_message = "Every service endpoint must be an https:// URL."
   }
 }

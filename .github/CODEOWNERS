@@ -1,0 +1,11 @@
+# Each team owns its monitoring config. Replace the placeholder GitHub teams
+# with your real org teams (e.g. @your-org/payments).
+
+# Shared modules, CI, and the integration require platform/SRE review.
+/terraform/modules/        @platform-sre
+/terraform/integration/    @platform-sre
+/.github/                  @platform-sre
+
+# Per-team config — owned by the respective team.
+/terraform/teams/payments/ @payments-team
+/terraform/teams/search/   @search-team

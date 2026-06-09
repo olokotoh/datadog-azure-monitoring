@@ -6,10 +6,13 @@
 *.tfstate.*
 .terraform.tfstate.lock.info
 
-# Variable files with real values (the .example is committed)
+# Variable files with real values are ignored by default...
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+# ...but per-team config files are intentional, secret-free, and committed.
+# (Secrets always come from env / CI, never from these files.)
+!terraform/teams/**/*.tfvars
 
 # Backend config with environment-specific values
 *.backend.hcl
